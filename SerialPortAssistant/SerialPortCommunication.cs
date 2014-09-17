@@ -7,19 +7,22 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Controls;
 
 namespace SerialPortAssistant
 {
     class SerialPortCommunication
     {
-        ConcurrentQueue<byte> readedData;
         CancellationTokenSource _continue;
         SerialPort serialPort;
         Thread receiveThread;
+        TextBox receivedTextBox;
+        public bool isOpen = false;
 
-        SerialPortCommunication(ConcurrentQueue<byte> data)
+        public SerialPortCommunication(TextBox received)
         {
-            readedData = data;
+            serialPort = new SerialPort();
+            receivedTextBox = received;
         }
 
         public void InitialPort(string portName, int baudRate, int dataBits, StopBits stopBits, Parity parity)
@@ -31,16 +34,23 @@ namespace SerialPortAssistant
             serialPort.Parity = parity;
         }
 
-        public void OpenPort()
+        public string[] GetPorts()
+        {
+            return SerialPort.GetPortNames();
+        }
+
+        public bool OpenPort()
         {
             if (serialPort.IsOpen)
                 MessageBox.Show("The port is already opended. Please check.");
             else
             {
                 serialPort.Open();
+                isOpen = true;
                 receiveThread = new Thread(ReceiveData);
                 receiveThread.Start();
             }
+            return true;
         }
 
         public void ClosePort()
@@ -50,6 +60,28 @@ namespace SerialPortAssistant
                 _continue.Cancel();
                 receiveThread = null;
             }
+            else if (serialPort.IsOpen)
+            {
+                serialPort.Close();
+            }
+            isOpen = false;
+        }
+
+        public void SendData(string text, bool isNewLine)
+        {
+            if (serialPort.IsOpen)
+            {
+                if (isNewLine)
+                    serialPort.WriteLine(text);
+                else
+                    serialPort.Write(text);
+            }
+        }
+
+        public void SendData(byte[] data)
+        {
+            if (serialPort.IsOpen)
+                serialPort.Write(data, 0, data.Length);
         }
 
         void ReceiveData()
@@ -64,13 +96,27 @@ namespace SerialPortAssistant
 
                 byte[] bytes = new byte[length];
                 serialPort.BaseStream.Read(bytes, 0, length);
-                for (int i = 0; i < length; i++)
-                {
-                    readedData.Enqueue(bytes[i]);
-                }
+                AppendTextToReceived(bytes);
             }
-            receiveThread.Join();
             serialPort.Close();
+        }
+
+        void AppendTextToReceived(byte[] bytes)
+        {
+            string text = "";
+            if (MainWindow.showHex)
+            {
+                text = BitConverter.ToString(bytes).Replace("-", " ") + " ";
+            }
+            else
+            {
+                text = Encoding.Default.GetString(bytes);
+            }
+
+            Application.Current.Dispatcher.BeginInvoke(new Action(delegate
+            {
+                receivedTextBox.Text += text;
+            }));
         }
     }
 }
